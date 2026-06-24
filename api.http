@@ -1,0 +1,53 @@
+@baseUrl = http://localhost:8115
+@interviewId = 1
+@responseId = 456
+
+### Create interview
+POST {{baseUrl}}/api/v1/create
+Content-Type: application/json
+
+{
+  "topic": "Go concurrency"
+}
+
+### List interviews
+GET {{baseUrl}}/api/v1/interviews
+
+### Get all interviews
+GET {{baseUrl}}/api/v1/interviews/all
+
+### Generate interview question
+POST {{baseUrl}}/api/v1/interviews/{{interviewId}}/question
+Content-Type: application/json
+
+{}
+
+### Submit interview response
+POST {{baseUrl}}/api/v1/interviews/{{interviewId}}/responses
+Content-Type: application/json
+
+{}
+
+### Get interview responses
+GET {{baseUrl}}/api/v1/interviews/{{interviewId}}/responses
+
+### Generate interview follow-up
+POST {{baseUrl}}/api/v1/interviews/{{interviewId}}/followup
+Content-Type: application/json
+
+{}
+
+### Complete interview
+PATCH {{baseUrl}}/api/v1/interviews/{{interviewId}}/complete
+
+### Get interview evaluation
+GET {{baseUrl}}/api/v1/interviews/{{interviewId}}/evaluation
+
+### Get response evaluation
+GET {{baseUrl}}/api/v1/responses/{{responseId}}/evaluation
+
+### Text to speech
+POST {{baseUrl}}/api/v1/tts
+Content-Type: application/json
+
+{}

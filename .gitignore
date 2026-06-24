@@ -1,0 +1,9 @@
+.env
+.local.ini
+.*.ini
+develop.ini
+staging.ini
+
+/.gocache/
+
+
