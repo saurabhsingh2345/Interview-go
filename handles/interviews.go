@@ -74,19 +74,39 @@ func ListInterviews(r *scale.Request) scale.Response {
 
 	return scale.MapResponse(rows, func(i *model.Interview) map[string]any {
 		return map[string]any{
-			"id":          i.ID,
-			"topic":       i.Topic,
-			"status":      i.Status,
-			"score":       i.Score,
-			"practice_id": i.PracticeID,
-			"program_id":  i.ProgramID,
-			"session_id":  i.SessionID,
+			"id":            i.ID,
+			"topic":         i.Topic,
+			"status":        i.Status,
+			"score":         i.Score,
+			"current_phase": i.CurrentPhase,
+			"practice_id":   i.PracticeID,
+			"program_id":    i.ProgramID,
+			"session_id":    i.SessionID,
 		}
 	})
 }
 
 func GetInterview(r *scale.Request) scale.Response {
 	return ListInterviews(r)
+}
+
+func GetInterviewByID(r *scale.Request) scale.Response {
+	id := r.Param("id").Int64()
+	pr := scale.WR[model.Interview](r)
+	interview := pr.Objects().Where("id = ?", id).FirstOrNil()
+	if interview == nil {
+		panic(scale.NotFoundError("interview not found"))
+	}
+	return scale.JsonResponse(map[string]any{
+		"id":            interview.ID,
+		"topic":         interview.Topic,
+		"status":        interview.Status,
+		"score":         interview.Score,
+		"current_phase": interview.CurrentPhase,
+		"practice_id":   interview.PracticeID,
+		"program_id":    interview.ProgramID,
+		"session_id":    interview.SessionID,
+	})
 }
 
 func CompleteInterview(r *scale.Request) scale.Response {

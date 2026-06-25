@@ -36,6 +36,7 @@ func (s *Service) Bind(app *scale.Application) {
 	app.Post("/api/v1/create", handles.CreateInterview)
 	app.Get("/api/v1/interviews", handles.ListInterviews)
 	app.Get("/api/v1/interviews/all", handles.GetInterview)
+	app.Get("/api/v1/interviews/{id}", handles.GetInterviewByID)
 	app.Post("/api/v1/interviews/{id}", handles.GenerateInterviewQuestion)
 	app.Post("/api/v1/interviews/{id}/responses", handles.SubmitInterviewResponse)
 	app.Get("/api/v1/interviews/{id}/responses", handles.GetInterviewResponses)
