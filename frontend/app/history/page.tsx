@@ -118,7 +118,7 @@ function HistoryPageContent() {
         <div className="grid gap-4">
           {filteredInterviews.map((item) => {
             const isCompleted = item.status === "completed";
-            const numericScore = parseFloat(item.score) || 0;
+            const numericScore = item.score || 0;
 
             return (
               <Card

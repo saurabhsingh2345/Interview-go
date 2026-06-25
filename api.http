@@ -17,7 +17,7 @@ GET {{baseUrl}}/api/v1/interviews
 GET {{baseUrl}}/api/v1/interviews/all
 
 ### Generate interview question
-POST {{baseUrl}}/api/v1/interviews/{{interviewId}}/question
+POST {{baseUrl}}/api/v1/interviews/{{interviewId}}
 Content-Type: application/json
 
 {}

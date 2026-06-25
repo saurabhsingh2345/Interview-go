@@ -72,10 +72,10 @@ export default function ResponseDetailPage() {
           </div>
 
           <div className="mt-8 space-y-4">
-            <MetricBar label="Correctness" value={data.evaluation.correctness} />
-            <MetricBar label="Clarity" value={data.evaluation.clarity} />
-            <MetricBar label="Depth" value={data.evaluation.depth} />
-            <MetricBar label="Confidence" value={data.evaluation.confidence} />
+            <MetricBar label="Correctness" value={data.evaluation?.correctness ?? 0} />
+            <MetricBar label="Clarity" value={data.evaluation?.clarity ?? 0} />
+            <MetricBar label="Depth" value={data.evaluation?.depth ?? 0} />
+            <MetricBar label="Confidence" value={data.evaluation?.confidence ?? 0} />
           </div>
         </Card>
 
@@ -90,14 +90,14 @@ export default function ResponseDetailPage() {
             <p className="mt-3 text-sm leading-7 text-slate-600">{data.answer || "No answer provided"}</p>
           </Card>
 
-          {data.evaluation.feedback ? (
+          {data.evaluation?.feedback ? (
             <Card className="p-6">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">AI feedback</p>
               <p className="mt-3 text-sm leading-7 text-slate-600">{data.evaluation.feedback}</p>
             </Card>
           ) : null}
 
-          {data.evaluation.suggested ? (
+          {data.evaluation?.suggested ? (
             <SubtleCard className="border-blue-100 bg-blue-50/70 p-6">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">Suggested answer</p>
               <p className="mt-3 text-sm leading-7 text-slate-700">{data.evaluation.suggested}</p>

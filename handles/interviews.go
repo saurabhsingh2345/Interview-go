@@ -11,7 +11,10 @@ import (
 )
 
 type body struct {
-	Topic string `json:"topic" binding:"required"`
+	Topic      string `json:"topic"`
+	ProgramID  *int64 `json:"program_id"`
+	SessionID  *int64 `json:"session_id"`
+	PracticeID *int64 `json:"practice_id"`
 }
 
 type transcriptBody struct {
@@ -20,32 +23,64 @@ type transcriptBody struct {
 
 func CreateInterview(r *scale.Request) scale.Response {
 	parsedBody := scale.Parse[body](r)
+	if strings.TrimSpace(parsedBody.Topic) == "" {
+		panic(scale.BadRequestError("topic is required"))
+	}
 	repo := scale.WR[model.Interview](r)
 
+	// If practice_id is set, return existing interview instead of creating a duplicate.
+	if parsedBody.PracticeID != nil {
+		existing := repo.Objects().Where("practice_id = ?", *parsedBody.PracticeID).FirstOrNil()
+		if existing != nil {
+			return scale.JsonResponse(map[string]any{
+				"id":          existing.ID,
+				"topic":       existing.Topic,
+				"status":      existing.Status,
+				"program_id":  existing.ProgramID,
+				"session_id":  existing.SessionID,
+				"practice_id": existing.PracticeID,
+			})
+		}
+	}
+
 	created := repo.Create(&model.Interview{
-		Topic: parsedBody.Topic,
+		Topic:      parsedBody.Topic,
+		ProgramID:  parsedBody.ProgramID,
+		SessionID:  parsedBody.SessionID,
+		PracticeID: parsedBody.PracticeID,
 	})
 
-	logger.Infof("Interview created successfully: id=%d topic=%s", created.ID, created.Topic)
+	logger.Infof("Interview created: id=%d topic=%s practice_id=%v", created.ID, created.Topic, created.PracticeID)
 
 	return scale.JsonResponse(map[string]any{
-		"message": "interview has assigned successfully",
-		"id":      created.ID,
-		"topic":   created.Topic,
-		"status":  http.StatusCreated,
+		"id":          created.ID,
+		"topic":       created.Topic,
+		"status":      created.Status,
+		"program_id":  created.ProgramID,
+		"session_id":  created.SessionID,
+		"practice_id": created.PracticeID,
 	})
 }
 
 func ListInterviews(r *scale.Request) scale.Response {
 	pr := scale.WR[model.Interview](r)
-	rows := pr.Objects().Descending("created_at").All()
+	q := pr.Objects().Descending("created_at")
+
+	if pid := r.Query("practice_id").Int(); pid > 0 {
+		q = q.Where("practice_id = ?", pid)
+	}
+
+	rows := q.All()
 
 	return scale.MapResponse(rows, func(i *model.Interview) map[string]any {
 		return map[string]any{
-			"id":     i.ID,
-			"topic":  i.Topic,
-			"status": i.Status,
-			"score":  i.Score,
+			"id":          i.ID,
+			"topic":       i.Topic,
+			"status":      i.Status,
+			"score":       i.Score,
+			"practice_id": i.PracticeID,
+			"program_id":  i.ProgramID,
+			"session_id":  i.SessionID,
 		}
 	})
 }
@@ -86,18 +121,15 @@ func CompleteInterview(r *scale.Request) scale.Response {
 	})
 }
 
-func computeFinalScore(responses []model.Response) string {
+func computeFinalScore(responses []model.Response) float64 {
 	if len(responses) == 0 {
-		return "0.00"
+		return 0.0
 	}
-
 	total := 0
 	for _, response := range responses {
 		total += response.Score
 	}
-
-	average := float64(total) / float64(len(responses))
-	return fmt.Sprintf("%.2f", average)
+	return float64(total) / float64(len(responses))
 }
 
 func GenerateInterviewQuestion(r *scale.Request) scale.Response {
@@ -123,7 +155,8 @@ func GenerateInterviewQuestion(r *scale.Request) scale.Response {
 		Ascending("question_num", "created_at").
 		All()
 
-	nextQuestion, err := generateNextQuestion(interview, responses)
+	ctx := phaseContextFromInterview(interview)
+	nextQuestion, err := generateNextQuestion(interview, responses, ctx)
 	if err != nil {
 		panic(scale.InternalServerError("failed to generate interview question", err))
 	}
@@ -138,6 +171,8 @@ func GenerateInterviewQuestion(r *scale.Request) scale.Response {
 		QuestionNum: questionNumber,
 		Question:    nextQuestion.Question,
 		IsFollowUp:  false,
+		Phase:       ctx.Phase,
+		Difficulty:  ctx.Difficulty,
 	})
 
 	return scale.JsonResponseCreated(map[string]any{
@@ -176,7 +211,8 @@ func SubmitInterviewResponse(r *scale.Request) scale.Response {
 		panic(scale.BadRequestError("latest question already has a response"))
 	}
 
-	evaluation, err := evaluateInterviewAnswer(interview, lastResponse, transcript)
+	evalCtx := phaseContextFromInterview(interview)
+	evaluation, err := evaluateInterviewAnswer(interview, lastResponse, transcript, evalCtx)
 	if err != nil {
 		panic(scale.InternalServerError("failed to evaluate interview response", err))
 	}
@@ -190,13 +226,22 @@ func SubmitInterviewResponse(r *scale.Request) scale.Response {
 	}, "Answer", "Score", "Feedback")
 
 	evaluationRecord := evaluationRepo.Create(&model.Evaluation{
-		ResponseID:      uint(lastResponse.ID),
-		Correctness:     evaluation.Correctness,
-		Clarity:         evaluation.Clarity,
-		Depth:           evaluation.Depth,
-		Confidence:      evaluation.Confidence,
-		AIFeedback:      evaluation.Feedback,
-		SuggestedAnswer: evaluation.SuggestedAnswer,
+		ResponseID:          uint(lastResponse.ID),
+		Correctness:         evaluation.Correctness,
+		Clarity:             evaluation.Clarity,
+		Depth:               evaluation.Depth,
+		Confidence:          evaluation.Confidence,
+		AIFeedback:          evaluation.Feedback,
+		SuggestedAnswer:     evaluation.SuggestedAnswer,
+		ExpressedConfidence: evaluation.ExpressedConfidence,
+		STARSituation:       evaluation.STARSituation,
+		STARTask:            evaluation.STARTask,
+		STARAction:          evaluation.STARAction,
+		STARResult:          evaluation.STARResult,
+		SDScalability:       evaluation.SDScalability,
+		SDComponents:        evaluation.SDComponents,
+		SDTradeoffs:         evaluation.SDTradeoffs,
+		SDCommunication:     evaluation.SDCommunication,
 	})
 
 	return scale.JsonResponse(map[string]any{
@@ -238,7 +283,8 @@ func GenerateInterviewFollowUp(r *scale.Request) scale.Response {
 		panic(scale.BadRequestError("latest question must be answered before follow-up"))
 	}
 
-	followUp, err := generateFollowUp(interview, latest, responses)
+	fuCtx := phaseContextFromInterview(interview)
+	followUp, err := generateFollowUp(interview, latest, responses, fuCtx, nil)
 	if err != nil {
 		panic(scale.InternalServerError("failed to generate follow-up question", err))
 	}
@@ -255,10 +301,12 @@ func GenerateInterviewFollowUp(r *scale.Request) scale.Response {
 	})
 
 	followUpRepo.Create(&model.FollowUpContext{
-		ResponseID:    uint(created.ID),
-		Reasoning:     followUp.Reasoning,
-		Difficulty:    followUp.Difficulty,
-		ConceptTested: followUp.ConceptTested,
+		ResponseID:      uint(created.ID),
+		Reasoning:       followUp.Reasoning,
+		Difficulty:      followUp.Difficulty,
+		ConceptTested:   followUp.ConceptTested,
+		SelectedBranch:  followUp.SelectedBranch,
+		BranchReasoning: followUp.BranchReasoning,
 	})
 
 	return scale.JsonResponseCreated(map[string]any{
@@ -365,7 +413,17 @@ func GetInterviewEvaluation(r *scale.Request) scale.Response {
 
 	if count == 0 {
 		return scale.JsonResponse(map[string]any{
-			"message": "no evaluations found",
+			"interview_id":    interview.ID,
+			"topic":           interview.Topic,
+			"status":          interview.Status,
+			"final_score":     interview.Score,
+			"metrics": map[string]any{
+				"correctness": 0,
+				"clarity":     0,
+				"depth":       0,
+				"confidence":  0,
+			},
+			"total_questions": len(interview.Responses),
 		})
 	}
 
@@ -406,9 +464,7 @@ func GetResponseEvaluation(r *scale.Request) scale.Response {
 	}
 
 	if response.Evaluation == nil {
-		return scale.JsonResponse(map[string]any{
-			"message": "evaluation not available yet",
-		})
+		panic(scale.NotFoundError("evaluation not available for this response"))
 	}
 
 	ev := response.Evaluation

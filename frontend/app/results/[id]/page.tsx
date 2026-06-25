@@ -56,7 +56,7 @@ export default function ResultsPage() {
   }, [interviewId]);
 
   const numericScore = useMemo(
-    () => (evaluation ? parseFloat(evaluation.final_score) || 0 : 0),
+    () => evaluation?.final_score ?? 0,
     [evaluation],
   );
 
@@ -130,10 +130,10 @@ export default function ResultsPage() {
             <Card className="p-6">
               <p className="text-sm font-semibold text-slate-900">Performance breakdown</p>
               <div className="mt-6 space-y-5">
-                <MetricBar label="Correctness" value={evaluation.metrics.correctness} />
-                <MetricBar label="Clarity" value={evaluation.metrics.clarity} />
-                <MetricBar label="Depth" value={evaluation.metrics.depth} />
-                <MetricBar label="Confidence" value={evaluation.metrics.confidence} />
+                <MetricBar label="Correctness" value={evaluation.metrics?.correctness ?? 0} />
+                <MetricBar label="Clarity" value={evaluation.metrics?.clarity ?? 0} />
+                <MetricBar label="Depth" value={evaluation.metrics?.depth ?? 0} />
+                <MetricBar label="Confidence" value={evaluation.metrics?.confidence ?? 0} />
               </div>
             </Card>
           </section>

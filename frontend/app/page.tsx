@@ -42,7 +42,7 @@ export default function HomePage() {
     const inProgress = interviews.filter((item) => item.status === "in_progress");
     const averageScore =
       completed.length > 0
-        ? completed.reduce((sum, item) => sum + (parseFloat(item.score) || 0), 0) / completed.length
+        ? completed.reduce((sum, item) => sum + (item.score ?? 0), 0) / completed.length
         : 0;
 
     return [
@@ -209,7 +209,7 @@ export default function HomePage() {
                       <div className="mt-4 flex items-center justify-between text-sm text-slate-500">
                         <span>{isCompleted ? "Review performance breakdown" : "Continue active interview"}</span>
                         <span className="font-semibold text-slate-900">
-                          {isCompleted && item.score ? `${parseFloat(item.score).toFixed(0)}/10` : "Open"}
+                          {isCompleted && item.score ? `${item.score.toFixed(0)}/10` : "Open"}
                         </span>
                       </div>
                     </button>

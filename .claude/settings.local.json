@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(PGPASSWORD=SUPERatul psql -h localhost -p 5433 -U admin interview -c \"\\\\d interviews\")",
+      "Bash(PGPASSWORD=SUPERatul psql -h localhost -p 5433 -U admin interview -c \"\\\\d responses\")",
+      "Bash(PGPASSWORD=SUPERatul psql -h localhost -p 5433 -U admin interview -c \"\\\\dt\")",
+      "Bash(STAGE=develop TAG=app SECRET=local go build ./...)"
+    ]
+  }
+}

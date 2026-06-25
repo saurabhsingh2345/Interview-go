@@ -15,7 +15,6 @@ import (
 
 const (
 	maxVoiceUploadBytes = 10 << 20
-	maxMainQuestions    = 5
 	maxFollowUps        = 3
 )
 
@@ -31,12 +30,10 @@ func readInterviewID(r *scale.Request) int64 {
 				return parsed
 			}
 		}
-
 		if r.Request.Method == http.MethodGet {
 			return 0
 		}
 	}
-
 	payload := scale.Parse[aiQuestionRequest](r)
 	return payload.InterviewID
 }
@@ -66,14 +63,26 @@ func GenerateAIVoiceQuestion(r *scale.Request) scale.Response {
 		Ascending("question_num", "created_at").
 		All()
 
-	mainQuestionCount := countMainQuestions(responses)
-	if mainQuestionCount >= maxMainQuestions {
-		return finalizeInterviewTurn(interviewRepo, interview, responses)
+	ctx := phaseContextFromInterview(interview)
+
+	// Return existing pending question instead of generating a duplicate.
+	if existing := findPendingResponse(responses, 0); existing != nil {
+		return scale.JsonResponse(map[string]any{
+			"text":            existing.Question,
+			"question_id":     existing.ID,
+			"follow_up":       existing.IsFollowUp,
+			"follow_up_count": 0,
+			"completed":       false,
+			"current_phase":   ctx.Phase,
+			"skill_estimate":  ctx.SkillEstimate,
+			"difficulty":      ctx.Difficulty,
+		})
 	}
 
-	nextQuestion, err := generateNextQuestion(interview, responses)
+	nextQuestion, err := generateNextQuestion(interview, responses, ctx)
 	if err != nil {
-		panic(scale.InternalServerError("failed to generate interview question", err))
+		logger.Errorf("generateNextQuestion failed (interview=%d phase=%s): %v", interviewID, ctx.Phase, err)
+		panic(scale.InternalServerError("failed to generate interview question: "+err.Error(), err))
 	}
 
 	questionNumber := 1
@@ -86,6 +95,8 @@ func GenerateAIVoiceQuestion(r *scale.Request) scale.Response {
 		QuestionNum: questionNumber,
 		Question:    nextQuestion.Question,
 		IsFollowUp:  false,
+		Phase:       ctx.Phase,
+		Difficulty:  ctx.Difficulty,
 	})
 
 	return scale.JsonResponse(map[string]any{
@@ -94,6 +105,9 @@ func GenerateAIVoiceQuestion(r *scale.Request) scale.Response {
 		"follow_up":       false,
 		"follow_up_count": 0,
 		"completed":       false,
+		"current_phase":   ctx.Phase,
+		"skill_estimate":  ctx.SkillEstimate,
+		"difficulty":      ctx.Difficulty,
 	})
 }
 
@@ -158,9 +172,12 @@ func SubmitAIVoiceAnswer(r *scale.Request) scale.Response {
 		panic(scale.BadRequestError("no pending question found for this answer"))
 	}
 
-	evaluation, err := evaluateInterviewAnswer(interview, current, transcript)
+	ctx := phaseContextFromInterview(interview)
+
+	evaluation, err := evaluateInterviewAnswer(interview, current, transcript, ctx)
 	if err != nil {
-		panic(scale.InternalServerError("failed to evaluate interview response", err))
+		logger.Errorf("evaluateInterviewAnswer failed (interview=%d): %v", interviewID, err)
+		panic(scale.InternalServerError("failed to evaluate interview response: "+err.Error(), err))
 	}
 
 	score := averageEvaluationScore(evaluation)
@@ -172,13 +189,22 @@ func SubmitAIVoiceAnswer(r *scale.Request) scale.Response {
 	}, "Answer", "Score", "Feedback")
 
 	evaluationRepo.Create(&model.Evaluation{
-		ResponseID:      uint(current.ID),
-		Correctness:     evaluation.Correctness,
-		Clarity:         evaluation.Clarity,
-		Depth:           evaluation.Depth,
-		Confidence:      evaluation.Confidence,
-		AIFeedback:      evaluation.Feedback,
-		SuggestedAnswer: evaluation.SuggestedAnswer,
+		ResponseID:          uint(current.ID),
+		Correctness:         evaluation.Correctness,
+		Clarity:             evaluation.Clarity,
+		Depth:               evaluation.Depth,
+		Confidence:          evaluation.Confidence,
+		AIFeedback:          evaluation.Feedback,
+		SuggestedAnswer:     evaluation.SuggestedAnswer,
+		ExpressedConfidence: evaluation.ExpressedConfidence,
+		STARSituation:       evaluation.STARSituation,
+		STARTask:            evaluation.STARTask,
+		STARAction:          evaluation.STARAction,
+		STARResult:          evaluation.STARResult,
+		SDScalability:       evaluation.SDScalability,
+		SDComponents:        evaluation.SDComponents,
+		SDTradeoffs:         evaluation.SDTradeoffs,
+		SDCommunication:     evaluation.SDCommunication,
 	})
 
 	responses = responseRepo.Objects().
@@ -191,9 +217,10 @@ func SubmitAIVoiceAnswer(r *scale.Request) scale.Response {
 	shouldAskFollowUp := score >= 3 && score <= 7 && followUpCount < maxFollowUps
 
 	if shouldAskFollowUp {
-		followUp, err := generateFollowUp(interview, current, responses)
+		followUp, err := generateFollowUp(interview, current, responses, ctx, evaluation)
 		if err != nil {
-			panic(scale.InternalServerError("failed to generate follow-up question", err))
+			logger.Errorf("generateFollowUp failed (interview=%d): %v", interviewID, err)
+			panic(scale.InternalServerError("failed to generate follow-up question: "+err.Error(), err))
 		}
 
 		parentID := uint(current.ID)
@@ -203,13 +230,17 @@ func SubmitAIVoiceAnswer(r *scale.Request) scale.Response {
 			Question:    followUp.Question,
 			IsFollowUp:  true,
 			ParentID:    &parentID,
+			Phase:       ctx.Phase,
+			Difficulty:  normalizeDifficulty(followUp.Difficulty, ctx.Difficulty),
 		})
 
 		followUpRepo.Create(&model.FollowUpContext{
-			ResponseID:    uint(created.ID),
-			Reasoning:     followUp.Reasoning,
-			Difficulty:    followUp.Difficulty,
-			ConceptTested: followUp.ConceptTested,
+			ResponseID:      uint(created.ID),
+			Reasoning:       followUp.Reasoning,
+			Difficulty:      followUp.Difficulty,
+			ConceptTested:   followUp.ConceptTested,
+			SelectedBranch:  followUp.SelectedBranch,
+			BranchReasoning: followUp.BranchReasoning,
 		})
 
 		return scale.JsonResponse(map[string]any{
@@ -220,19 +251,38 @@ func SubmitAIVoiceAnswer(r *scale.Request) scale.Response {
 			"follow_up_count": followUpCount + 1,
 			"transcript":      transcript,
 			"completed":       false,
+			"current_phase":   ctx.Phase,
+			"skill_estimate":  ctx.SkillEstimate,
+			"difficulty":      ctx.Difficulty,
 		})
 	}
 
-	mainQuestionCount := countMainQuestions(responses)
-	if !current.IsFollowUp && mainQuestionCount >= maxMainQuestions {
-		return finalizeInterviewTurn(interviewRepo, interview, responses, withTurnMetadata(score, transcript))
+	// Advance phase on main-question answers only.
+	if !current.IsFollowUp {
+		advancement := computePhaseAdvancement(interview, score)
+		interviewRepo.Update(int64(interview.ID), &model.Interview{
+			CurrentPhase:       advancement.NewPhase,
+			PhaseQuestionCount: advancement.NewPhaseCount,
+			SkillEstimate:      advancement.NewSkillEstimate,
+		}, "CurrentPhase", "PhaseQuestionCount", "SkillEstimate")
+		interview.CurrentPhase = advancement.NewPhase
+		interview.PhaseQuestionCount = advancement.NewPhaseCount
+		interview.SkillEstimate = advancement.NewSkillEstimate
+
+		if advancement.ShouldComplete {
+			return finalizeInterviewTurn(interviewRepo, interview, responses, withTurnMetadata(score, transcript))
+		}
 	}
 
-	if current.IsFollowUp && mainQuestionCount >= maxMainQuestions && root != nil && root.QuestionNum >= maxMainQuestions {
-		return finalizeInterviewTurn(interviewRepo, interview, responses, withTurnMetadata(score, transcript))
-	}
+	// Regenerate session summary (best-effort, uses updated interview state).
+	newSummary := generateSessionSummary(interview, responses)
+	interviewRepo.Update(int64(interview.ID), &model.Interview{
+		SessionSummary: newSummary,
+	}, "SessionSummary")
+	interview.SessionSummary = newSummary
 
-	nextQuestion, err := generateNextQuestion(interview, responses)
+	nextCtx := phaseContextFromInterview(interview)
+	nextQuestion, err := generateNextQuestion(interview, responses, nextCtx)
 	if err != nil {
 		panic(scale.InternalServerError("failed to generate next interview question", err))
 	}
@@ -243,6 +293,8 @@ func SubmitAIVoiceAnswer(r *scale.Request) scale.Response {
 		QuestionNum: nextQuestionNum,
 		Question:    nextQuestion.Question,
 		IsFollowUp:  false,
+		Phase:       nextCtx.Phase,
+		Difficulty:  nextCtx.Difficulty,
 	})
 
 	return scale.JsonResponse(map[string]any{
@@ -253,6 +305,134 @@ func SubmitAIVoiceAnswer(r *scale.Request) scale.Response {
 		"follow_up_count": 0,
 		"transcript":      transcript,
 		"completed":       false,
+		"current_phase":   nextCtx.Phase,
+		"skill_estimate":  nextCtx.SkillEstimate,
+		"difficulty":      nextCtx.Difficulty,
+	})
+}
+
+type skipHintRequest struct {
+	InterviewID int64 `json:"interview_id"`
+	QuestionID  int64 `json:"question_id"`
+}
+
+func SkipQuestion(r *scale.Request) scale.Response {
+	payload := scale.Parse[skipHintRequest](r)
+	interviewID := payload.InterviewID
+	if interviewID == 0 {
+		interviewID = readInterviewID(r)
+	}
+	if interviewID == 0 {
+		panic(scale.BadRequestError("interview_id is required"))
+	}
+
+	interviewRepo := scale.WR[model.Interview](r)
+	responseRepo := scale.WR[model.Response](r)
+
+	interview := interviewRepo.Objects().Where("id = ?", interviewID).First()
+	if interview.Status == "completed" {
+		return scale.JsonResponse(map[string]any{
+			"text":            "This interview is already complete.",
+			"question_id":     0,
+			"follow_up":       false,
+			"follow_up_count": 0,
+			"completed":       true,
+		})
+	}
+
+	responses := responseRepo.Objects().
+		Where("interview_id = ?", interviewID).
+		Ascending("question_num", "created_at").
+		All()
+
+	current := findPendingResponse(responses, payload.QuestionID)
+	if current != nil {
+		responseRepo.Update(int64(current.ID), &model.Response{
+			Answer: "[skipped]",
+			Score:  5,
+		}, "Answer", "Score")
+		responses = responseRepo.Objects().
+			Where("interview_id = ?", interviewID).
+			Ascending("question_num", "created_at").
+			All()
+	}
+
+	ctx := phaseContextFromInterview(interview)
+	nextQuestion, err := generateNextQuestion(interview, responses, ctx)
+	if err != nil {
+		logger.Errorf("generateNextQuestion failed after skip (interview=%d): %v", interviewID, err)
+		panic(scale.InternalServerError("failed to generate next question: "+err.Error(), err))
+	}
+
+	questionNumber := 1
+	if len(responses) > 0 {
+		questionNumber = responses[len(responses)-1].QuestionNum + 1
+	}
+
+	created := responseRepo.Create(&model.Response{
+		InterviewID: uint(interviewID),
+		QuestionNum: questionNumber,
+		Question:    nextQuestion.Question,
+		IsFollowUp:  false,
+		Phase:       ctx.Phase,
+		Difficulty:  ctx.Difficulty,
+	})
+
+	return scale.JsonResponse(map[string]any{
+		"text":            created.Question,
+		"question_id":     created.ID,
+		"follow_up":       false,
+		"follow_up_count": 0,
+		"completed":       false,
+		"current_phase":   ctx.Phase,
+		"skill_estimate":  ctx.SkillEstimate,
+		"difficulty":      ctx.Difficulty,
+	})
+}
+
+func HintQuestion(r *scale.Request) scale.Response {
+	payload := scale.Parse[skipHintRequest](r)
+	interviewID := payload.InterviewID
+	if interviewID == 0 {
+		interviewID = readInterviewID(r)
+	}
+	if interviewID == 0 {
+		panic(scale.BadRequestError("interview_id is required"))
+	}
+
+	interviewRepo := scale.WR[model.Interview](r)
+	responseRepo := scale.WR[model.Response](r)
+
+	interview := interviewRepo.Objects().Where("id = ?", interviewID).First()
+	responses := responseRepo.Objects().
+		Where("interview_id = ?", interviewID).
+		Ascending("question_num", "created_at").
+		All()
+
+	current := findPendingResponse(responses, payload.QuestionID)
+	if current == nil {
+		panic(scale.BadRequestError("no pending question found"))
+	}
+
+	hintText, simpler, err := generateHintAndSimplify(interview, current)
+	if err != nil {
+		logger.Errorf("generateHintAndSimplify failed (interview=%d): %v", interviewID, err)
+		panic(scale.InternalServerError("failed to generate hint: "+err.Error(), err))
+	}
+
+	combined := fmt.Sprintf("Here's a hint: %s Now, let's try a simpler version: %s", hintText, simpler)
+
+	responseRepo.Update(int64(current.ID), &model.Response{
+		Question: combined,
+	}, "Question")
+
+	return scale.JsonResponse(map[string]any{
+		"text":            combined,
+		"question_id":     current.ID,
+		"follow_up":       false,
+		"follow_up_count": 0,
+		"completed":       false,
+		"current_phase":   interview.CurrentPhase,
 	})
 }
 
@@ -276,22 +456,18 @@ func finalizeInterviewTurn(interviewRepo *scale.DAO[model.Interview], interview 
 		interview.Score = updated.Score
 	}
 
-	message := "Interview complete. Thank you for your responses."
-
 	payload := map[string]any{
-		"text":            message,
+		"text":            "Interview complete. Thank you for your responses.",
 		"question_id":     0,
 		"follow_up":       false,
 		"follow_up_count": 0,
 		"completed":       true,
 		"final_score":     interview.Score,
 	}
-
 	if len(meta) > 0 {
 		payload["score"] = meta[0].score
 		payload["transcript"] = meta[0].transcript
 	}
-
 	return scale.JsonResponse(payload)
 }
 
@@ -315,7 +491,6 @@ func findPendingResponse(responses []*model.Response, questionID int64) *model.R
 			return response
 		}
 	}
-
 	return nil
 }
 
@@ -326,14 +501,12 @@ func resolveRootResponse(responses []*model.Response, current *model.Response) *
 	if current.ParentID == nil {
 		return current
 	}
-
 	byID := make(map[uint]*model.Response, len(responses))
 	for _, response := range responses {
 		if response != nil {
 			byID[uint(response.ID)] = response
 		}
 	}
-
 	node := current
 	for node != nil && node.ParentID != nil {
 		parent := byID[*node.ParentID]
@@ -342,7 +515,6 @@ func resolveRootResponse(responses []*model.Response, current *model.Response) *
 		}
 		node = parent
 	}
-
 	return node
 }
 
@@ -350,7 +522,6 @@ func countFollowUpsForRoot(responses []*model.Response, rootID int64) int {
 	if rootID == 0 {
 		return 0
 	}
-
 	count := 0
 	for _, response := range responses {
 		if response == nil || !response.IsFollowUp {
@@ -360,7 +531,6 @@ func countFollowUpsForRoot(responses []*model.Response, rootID int64) int {
 			count++
 		}
 	}
-
 	return count
 }
 
@@ -379,11 +549,9 @@ func audioUploadFilename(name string) string {
 	if base == "" {
 		return "answer.webm"
 	}
-
 	ext := filepath.Ext(base)
 	if ext == "" {
 		return fmt.Sprintf("%s.webm", base)
 	}
-
 	return base
 }

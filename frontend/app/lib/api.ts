@@ -47,7 +47,7 @@ export interface Interview {
   id: number;
   topic: string;
   status: string;
-  score: string;
+  score: number;
 }
 
 export interface CreateInterviewResponse {
@@ -176,7 +176,7 @@ export interface CompleteInterviewResponse {
   id: number;
   topic: string;
   status: string;
-  score: string;
+  score: number;
   responses: unknown[];
 }
 
@@ -193,7 +193,7 @@ export interface InterviewEvaluation {
   interview_id: number;
   topic: string;
   status: string;
-  final_score: string;
+  final_score: number;
   metrics: {
     correctness: number;
     clarity: number;
@@ -239,7 +239,129 @@ export interface VoiceTurnResponse {
   score?: number;
   transcript?: string;
   completed: boolean;
-  final_score?: string;
+  final_score?: number;
+  current_phase?: string;
+  skill_estimate?: number;
+  difficulty?: string;
+}
+
+// ── Report ──
+
+export interface InterviewReport {
+  id: number;
+  interview_id: number;
+  overall_score: number;
+  communication_score: number;
+  technical_score: number;
+  coding_score: number;
+  behavioral_score: number;
+  consistency_score: number;
+  confidence_calibration_score: number;
+  strengths: string;
+  weaknesses: string;
+  improvement_plan: string;
+}
+
+export function getInterviewReport(interviewId: number) {
+  return request<InterviewReport>(`/interviews/${interviewId}/report`);
+}
+
+// ── Transcript ──
+
+export interface TranscriptEntry {
+  id: number;
+  question_num: number;
+  phase: string;
+  difficulty: string;
+  is_follow_up: boolean;
+  question: string;
+  answer: string;
+  score: number;
+  evaluation?: EvaluationData & {
+    expressed_confidence?: number;
+    star_situation?: number;
+    star_task?: number;
+    star_action?: number;
+    star_result?: number;
+  };
+}
+
+export interface TranscriptData {
+  interview_id: number;
+  transcript: TranscriptEntry[];
+  count: number;
+}
+
+export function getInterviewTranscript(interviewId: number) {
+  return request<TranscriptData>(`/interviews/${interviewId}/transcript`);
+}
+
+// ── Coding round ──
+
+export interface CodingProblem {
+  problem_statement: string;
+  examples: { input: string; output: string; explanation: string }[];
+  constraints: string[];
+  hints: string[];
+  expected_time_complexity: string;
+  expected_space_complexity: string;
+  tags: string[];
+}
+
+export interface CodingProblemResponse {
+  response_id: number;
+  problem: CodingProblem;
+}
+
+export function getCodingProblem(interviewId: number) {
+  return request<CodingProblemResponse>(`/interviews/${interviewId}/coding-problem`);
+}
+
+export interface CodeSubmissionResult {
+  response_id: number;
+  evaluation_id: number;
+  correctness: number;
+  time_complexity: string;
+  space_complexity: string;
+  code_quality: number;
+  has_bugs: boolean;
+  bug_description: string;
+  optimization_possible: boolean;
+  follow_up_question: string;
+  completed: boolean;
+  current_phase: string;
+}
+
+export function submitCode(
+  interviewId: number,
+  responseId: number,
+  language: string,
+  code: string,
+  timeTakenSeconds?: number
+) {
+  return request<CodeSubmissionResult>(`/interviews/${interviewId}/code`, {
+    method: "POST",
+    body: JSON.stringify({
+      response_id: responseId,
+      language,
+      code,
+      time_taken_seconds: timeTakenSeconds ?? 0,
+    }),
+  });
+}
+
+export function skipQuestion(interviewId: number, questionId: number) {
+  return request<VoiceTurnResponse>("/skip", {
+    method: "POST",
+    body: JSON.stringify({ interview_id: interviewId, question_id: questionId }),
+  });
+}
+
+export function requestHint(interviewId: number, questionId: number) {
+  return request<VoiceTurnResponse>("/hint", {
+    method: "POST",
+    body: JSON.stringify({ interview_id: interviewId, question_id: questionId }),
+  });
 }
 
 export function requestAIVoiceQuestion(interviewId: number) {

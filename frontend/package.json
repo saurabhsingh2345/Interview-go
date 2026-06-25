@@ -3,13 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3001",
+    "dev": "next dev -p 3001 --webpack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
+    "@monaco-editor/react": "^4.7.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.14.0",

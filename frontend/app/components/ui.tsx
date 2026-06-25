@@ -188,9 +188,11 @@ export function EmptyState({
 export function ScoreRing({
   score,
   size = 120,
+  label = "out of 10",
 }: {
   score: number;
   size?: number;
+  label?: string;
 }) {
   const radius = size / 2 - 10;
   const circumference = 2 * Math.PI * radius;
@@ -224,7 +226,7 @@ export function ScoreRing({
         <div className="brand-wordmark text-3xl" style={{ color: tone }}>
           {score.toFixed(0)}
         </div>
-        <div className="text-xs font-medium text-slate-500">out of 10</div>
+        <div className="text-xs font-medium text-slate-500">{label}</div>
       </div>
     </div>
   );

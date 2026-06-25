@@ -27,6 +27,7 @@ func (s *Service) Bind(app *scale.Application) {
 	app.RegisterModel(&model.Response{})
 	app.RegisterModel(&model.Evaluation{})
 	app.RegisterModel(&model.FollowUpContext{})
+	app.RegisterModel(&model.InterviewReport{})
 
 	// health end point
 	app.Get("/health", HealthHandler)
@@ -47,5 +48,15 @@ func (s *Service) Bind(app *scale.Application) {
 	app.Get("/api/v1/question", handles.GenerateAIVoiceQuestion)
 	app.Post("/api/v1/answer", handles.SubmitAIVoiceAnswer)
 	app.Post("/api/v1/tts", handles.GenerateTTS)
+	app.Post("/api/v1/skip", handles.SkipQuestion)
+	app.Post("/api/v1/hint", handles.HintQuestion)
+
+	// Report endpoints (Step 4)
+	app.Get("/api/v1/interviews/{id}/report", handles.GetInterviewReport)
+	app.Get("/api/v1/interviews/{id}/transcript", handles.GetInterviewTranscript)
+
+	// Coding round endpoints (Step 5)
+	app.Post("/api/v1/interviews/{id}/code", handles.SubmitCode)
+	app.Get("/api/v1/interviews/{id}/coding-problem", handles.GetCodingProblem)
 
 }
