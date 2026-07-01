@@ -3,22 +3,22 @@
 import { useState, useEffect } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTheme } from "./ThemeProvider";
-import { Button, Input, cn } from "./ui";
-import { Sun, Moon, Monitor } from "lucide-react";
+import { Input, cn } from "./ui";
+import { Sun, Moon, Monitor, LayoutDashboard, MessagesSquare, Settings, Search, Plus } from "lucide-react";
 
 const navigation = [
-  { label: "Dashboard", href: "/" },
-  { label: "Interviews", href: "/interviews" },
-  { label: "Settings", href: "/settings" },
+  { label: "Dashboard", href: "/", icon: LayoutDashboard },
+  { label: "Interviews", href: "/interviews", icon: MessagesSquare },
+  { label: "Settings", href: "/settings", icon: Settings },
 ];
 
-function SearchIcon() {
-  return (
-    <svg viewBox="0 0 20 20" className="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <circle cx="9" cy="9" r="5.75" />
-      <path d="m13.5 13.5 3.25 3.25" />
-    </svg>
-  );
+function titleFor(pathname: string) {
+  if (pathname.startsWith("/interview/")) return ["Live Session", "Active interview"];
+  if (pathname.startsWith("/results/")) return ["Performance Review", "Interview summary"];
+  if (pathname.startsWith("/responses/")) return ["Response Detail", "Answer evaluation"];
+  if (pathname.startsWith("/settings")) return ["Workspace", "Settings"];
+  if (pathname.startsWith("/interviews") || pathname.startsWith("/history")) return ["Library", "All interviews"];
+  return ["Overview", "Interview studio"];
 }
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
@@ -38,142 +38,106 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const value = String(formData.get("q") ?? "").trim();
-
-    if (!value) {
-      router.push("/interviews");
-      return;
-    }
-
-    router.push(`/interviews?q=${encodeURIComponent(value)}`);
+    router.push(value ? `/interviews?q=${encodeURIComponent(value)}` : "/interviews");
   };
+
+  const isActive = (href: string) =>
+    href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
+
+  const [eyebrow, heading] = titleFor(pathname);
 
   return (
     <div className="app-shell">
       <aside className="app-sidebar">
-        <div className="flex items-center gap-3 px-2">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/8 text-lg text-white shadow-lg">
-            VI
-          </div>
+        <div className="flex items-center gap-3 px-1">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/enfeca-logo.svg" alt="Enfeca" className="h-8 w-auto" />
           <div>
-            <div className="brand-wordmark text-lg text-white">VoxInterview</div>
-            <div className="text-sm text-slate-400">Interview operations</div>
+            <div className="brand-wordmark text-lg" style={{ color: "var(--foreground)" }}>
+              Enfeca<span style={{ color: "var(--accent-amber)" }}> Interview</span>
+            </div>
+            <div className="text-xs" style={{ color: "var(--sidebar-muted)" }}>AI Interview Studio</div>
           </div>
         </div>
 
-        <nav className="mt-10 flex flex-col gap-2">
+        <nav className="mt-9 flex flex-col gap-1.5">
+          <p className="eyebrow px-2 pb-2">Menu</p>
           {navigation.map((item) => {
-            const active =
-              item.href === "/"
-                ? pathname === "/"
-                : pathname === item.href || pathname.startsWith(`${item.href}/`);
-
+            const Icon = item.icon;
             return (
               <button
                 key={item.label}
-                className={cn(
-                  "flex items-center rounded-2xl px-4 py-3 text-left text-sm font-medium transition",
-                  active
-                    ? "bg-card text-slate-950 shadow-lg"
-                    : "text-slate-300 hover:bg-white/8 hover:text-white",
-                )}
+                className={cn("nav-link w-full", isActive(item.href) && "active")}
                 onClick={() => router.push(item.href)}
               >
+                <Icon className="nav-ico h-[18px] w-[18px]" />
                 {item.label}
               </button>
             );
           })}
         </nav>
 
-        <div className="mt-auto rounded-3xl border border-white/10 bg-white/6 p-5 text-white/90">
-          <div className="text-sm font-semibold">Interview quality</div>
-          <p className="mt-2 text-sm leading-6 text-slate-300">
-            Keep sessions concise, review scores after each run, and use follow-up prompts to deepen candidate signal.
-          </p>
+        <div className="mt-auto">
+          <div
+            className="rounded-3xl border p-5"
+            style={{ borderColor: "var(--sidebar-border)", background: "color-mix(in srgb, var(--accent-amber) 7%, transparent)" }}
+          >
+            <div className="flex items-center gap-2">
+              <span className="status-dot" style={{ color: "var(--accent-teal)" }} />
+              <span className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>Studio tip</span>
+            </div>
+            <p className="mt-2 text-sm leading-6" style={{ color: "var(--sidebar-muted)" }}>
+              Speak naturally — Enfeca listens, follows up, and scores each answer in real time.
+            </p>
+          </div>
         </div>
       </aside>
 
       <div className="app-main">
         <header className="app-topbar">
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-              {pathname.startsWith("/interview/")
-                ? "Live Session"
-                : pathname.startsWith("/results/")
-                ? "Performance Review"
-                : pathname.startsWith("/responses/")
-                ? "Response Detail"
-                : pathname.startsWith("/settings")
-                ? "Workspace Settings"
-                : pathname.startsWith("/interviews") || pathname.startsWith("/history")
-                ? "Interview Library"
-                : "Dashboard"}
-            </p>
-            <h2 className="mt-1 text-lg font-semibold text-slate-950">
-              {pathname.startsWith("/interview/")
-                ? "Active interview"
-                : pathname.startsWith("/results/")
-                ? "Interview summary"
-                : pathname.startsWith("/responses/")
-                ? "Answer evaluation"
-                : pathname.startsWith("/settings")
-                ? "Team preferences"
-                : pathname.startsWith("/interviews") || pathname.startsWith("/history")
-                ? "All interviews"
-                : "Interview operations overview"}
-            </h2>
+            <p className="eyebrow">{eyebrow}</p>
+            <h2 className="mt-1 brand-wordmark text-xl" style={{ color: "var(--foreground)" }}>{heading}</h2>
           </div>
 
           <div className="flex flex-1 items-center justify-end gap-3">
-            <form onSubmit={handleSearchSubmit} className="hidden w-full max-w-md md:block">
+            <form onSubmit={handleSearchSubmit} className="hidden w-full max-w-sm md:block">
               <Input
                 key={`${pathname}-${query}`}
                 name="q"
-                icon={<SearchIcon />}
+                icon={<Search className="h-4 w-4" />}
                 defaultValue={query}
-                placeholder="Search interviews or topics"
+                placeholder="Search interviews…"
               />
             </form>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="hidden md:flex rounded-full text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+            <button
+              className="btn btn-ghost hidden h-11 w-11 !min-h-0 !p-0 md:inline-flex"
               onClick={() => setTheme(theme === "light" ? "dark" : theme === "dark" ? "system" : "light")}
-              title="Toggle Theme"
+              title="Toggle theme"
             >
               {mounted ? (
-                theme === "light" ? (
-                  <Sun className="h-5 w-5" />
-                ) : theme === "dark" ? (
-                  <Moon className="h-5 w-5" />
-                ) : (
-                  <Monitor className="h-5 w-5" />
-                )
+                theme === "light" ? <Sun className="h-5 w-5" /> : theme === "dark" ? <Moon className="h-5 w-5" /> : <Monitor className="h-5 w-5" />
               ) : (
                 <div className="h-5 w-5" />
               )}
-            </Button>
-            <Button variant="secondary" onClick={() => router.push("/")}>
-              Create
-            </Button>
+            </button>
+            <button className="btn btn-primary" onClick={() => router.push("/")}>
+              <Plus className="h-4 w-4" />
+              New interview
+            </button>
           </div>
         </header>
 
         <div className="mobile-nav lg:hidden">
           {navigation.map((item) => {
-            const active =
-              item.href === "/"
-                ? pathname === "/"
-                : pathname === item.href || pathname.startsWith(`${item.href}/`);
-
+            const Icon = item.icon;
             return (
               <button
                 key={item.label}
-                className={cn(
-                  "whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition",
-                  active ? "bg-slate-900 text-slate-50" : "bg-card text-slate-600 shadow-sm ring-1 ring-slate-200",
-                )}
+                className={cn("nav-link whitespace-nowrap", isActive(item.href) && "active")}
                 onClick={() => router.push(item.href)}
               >
+                <Icon className="nav-ico h-[18px] w-[18px]" />
                 {item.label}
               </button>
             );

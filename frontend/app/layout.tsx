@@ -6,7 +6,7 @@ import AppShell from "./components/AppShell";
 import { ThemeProvider } from "./components/ThemeProvider";
 
 export const metadata: Metadata = {
-  title: "VoxInterview — AI Voice Interview Platform",
+  title: "Enfeca Interview — AI Voice Interview Platform",
   description:
     "Practice technical interviews with an AI interviewer that listens, evaluates, and helps you improve in real-time using voice interaction.",
   keywords: ["AI interview", "voice interview", "technical interview", "mock interview", "speech recognition"],
@@ -22,7 +22,7 @@ export default function RootLayout({
       <body>
         <ThemeProvider
           attribute="class"
-          defaultTheme="system"
+          defaultTheme="dark"
           enableSystem
           disableTransitionOnChange
         >

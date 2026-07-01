@@ -17,10 +17,30 @@ type Interview struct {
 	SkillEstimate      float64 `gorm:"type:numeric(4,2);default:5.0" json:"skill_estimate"`
 	SessionSummary     string  `gorm:"type:text;default:''" json:"session_summary"`
 
+	// Owning third-party partner (NULL = legacy / first-party).
+	PartnerID *int64 `gorm:"index" json:"partner_id,omitempty"`
+
+	// Candidate identity supplied by the partner at create time (redirect flow).
+	CandidateName  string `gorm:"type:varchar(255);default:''" json:"candidate_name,omitempty"`
+	CandidateEmail string `gorm:"type:varchar(255);default:''" json:"candidate_email,omitempty"`
+
+	// ExternalID is the partner's own reference for this candidate/interview, so
+	// they can fetch the report without storing our id.
+	ExternalID string `gorm:"type:varchar(255);index;default:''" json:"external_id,omitempty"`
+
+	// RedirectURL is where we send the candidate back on the partner's site when
+	// the interview finishes (optional).
+	RedirectURL string `gorm:"type:text;default:''" json:"redirect_url,omitempty"`
+
+	// Optional webhook: POSTed a signed payload when the interview completes.
+	CallbackURL string `gorm:"type:text;default:''" json:"callback_url,omitempty"`
+
 	// Course context (optional — set when created from go-cloud)
-	ProgramID  *int64 `gorm:"index" json:"program_id,omitempty"`
-	SessionID  *int64 `gorm:"index" json:"session_id,omitempty"`
-	PracticeID *int64 `gorm:"uniqueIndex" json:"practice_id,omitempty"`
+	ProgramID *int64 `gorm:"index" json:"program_id,omitempty"`
+	SessionID *int64 `gorm:"index" json:"session_id,omitempty"`
+	// Unique per partner (idx_interviews_partner_practice), not globally — see
+	// migration 011. A plain index here; the composite unique is created in SQL.
+	PracticeID *int64 `gorm:"index" json:"practice_id,omitempty"`
 
 	Responses []Response `gorm:"foreignKey:InterviewID;constraint:OnDelete:CASCADE"`
 }

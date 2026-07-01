@@ -1,53 +1,48 @@
-@baseUrl = http://localhost:8115
+@baseUrl = http://localhost:8113
 @interviewId = 1
 @responseId = 456
+# Mint with: go run ./cmd/partner -name "Acme" -email dev@acme.com
+@apiKey = sk_live_replace_me
 
-### Create interview
-POST {{baseUrl}}/api/v1/create
+### 1. Create interview (partner API key) -> returns redirect_url
+POST {{baseUrl}}/api/v1/interviews
+Content-Type: application/json
+Authorization: Bearer {{apiKey}}
+
+{
+  "topic": "Senior Go Engineer — concurrency & systems",
+  "candidate_name": "Asha Rao",
+  "candidate_email": "asha@acme.com",
+  "external_id": "acme-user-9981",
+  "redirect_url": "https://acme.com/interviews/done",
+  "callback_url": "https://acme.com/hooks/interview"
+}
+
+### 2. Open the redirect_url from the response in a browser.
+###    (The candidate app calls /session/exchange for you — shown here for reference.)
+POST {{baseUrl}}/api/v1/session/exchange
 Content-Type: application/json
 
 {
-  "topic": "Go concurrency"
+  "token": "paste-the-t-query-param-from-redirect_url"
 }
 
-### List interviews
-GET {{baseUrl}}/api/v1/interviews
+### 3a. Poll interview status until "completed" (partner API key)
+GET {{baseUrl}}/api/v1/interviews/{{interviewId}}
+Authorization: Bearer {{apiKey}}
 
-### Get all interviews
-GET {{baseUrl}}/api/v1/interviews/all
+### 3b. Get the report (partner API key; 400 until completed)
+GET {{baseUrl}}/api/v1/interviews/{{interviewId}}/report
+Authorization: Bearer {{apiKey}}
 
-### Generate interview question
-POST {{baseUrl}}/api/v1/interviews/{{interviewId}}
-Content-Type: application/json
+### Optional: full transcript
+GET {{baseUrl}}/api/v1/interviews/{{interviewId}}/transcript
+Authorization: Bearer {{apiKey}}
 
-{}
-
-### Submit interview response
-POST {{baseUrl}}/api/v1/interviews/{{interviewId}}/responses
-Content-Type: application/json
-
-{}
-
-### Get interview responses
-GET {{baseUrl}}/api/v1/interviews/{{interviewId}}/responses
-
-### Generate interview follow-up
-POST {{baseUrl}}/api/v1/interviews/{{interviewId}}/followup
-Content-Type: application/json
-
-{}
-
-### Complete interview
-PATCH {{baseUrl}}/api/v1/interviews/{{interviewId}}/complete
-
-### Get interview evaluation
+### Optional: aggregated evaluation
 GET {{baseUrl}}/api/v1/interviews/{{interviewId}}/evaluation
+Authorization: Bearer {{apiKey}}
 
-### Get response evaluation
-GET {{baseUrl}}/api/v1/responses/{{responseId}}/evaluation
-
-### Text to speech
-POST {{baseUrl}}/api/v1/tts
-Content-Type: application/json
-
-{}
+### List your interviews
+GET {{baseUrl}}/api/v1/interviews
+Authorization: Bearer {{apiKey}}

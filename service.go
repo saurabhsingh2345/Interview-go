@@ -23,17 +23,29 @@ func (s *Service) GrpcAuthentication(app *scale.Application, ctx context.Context
 func (s *Service) Bind(app *scale.Application) {
 
 	// Model
+	app.RegisterModel(&model.Partner{})
+	app.RegisterModel(&model.APIKey{})
+	app.RegisterModel(&model.InterviewSession{})
 	app.RegisterModel(&model.Interview{})
 	app.RegisterModel(&model.Response{})
 	app.RegisterModel(&model.Evaluation{})
 	app.RegisterModel(&model.FollowUpContext{})
 	app.RegisterModel(&model.InterviewReport{})
 
+	// Third-party API authentication (Bearer API keys).
+	app.RegisterMiddleware(handles.APIKeyAuth)
+
 	// health end point
 	app.Get("/health", HealthHandler)
 
+	// Redirect handoff: exchange a one-time launch token for a browser session
+	// token. Unauthenticated — the launch token itself is the credential.
+	app.Post("/api/v1/session/exchange", handles.ExchangeSession)
+
 	// API
 	app.Post("/api/v1/create", handles.CreateInterview)
+	// Partner-facing alias for create (clearer name in integration docs).
+	app.Post("/api/v1/interviews", handles.CreateInterview)
 	app.Get("/api/v1/interviews", handles.ListInterviews)
 	app.Get("/api/v1/interviews/all", handles.GetInterview)
 	app.Get("/api/v1/interviews/{id}", handles.GetInterviewByID)

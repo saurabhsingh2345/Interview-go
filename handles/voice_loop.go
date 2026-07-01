@@ -43,6 +43,7 @@ func GenerateAIVoiceQuestion(r *scale.Request) scale.Response {
 	if interviewID == 0 {
 		panic(scale.BadRequestError("interview_id is required"))
 	}
+	EnforceInterviewScope(r, interviewID)
 
 	interviewRepo := scale.WR[model.Interview](r)
 	responseRepo := scale.WR[model.Response](r)
@@ -122,6 +123,7 @@ func SubmitAIVoiceAnswer(r *scale.Request) scale.Response {
 	if err != nil || interviewID == 0 {
 		panic(scale.BadRequestError("interview_id is required"))
 	}
+	EnforceInterviewScope(r, interviewID)
 
 	questionID, _ := strconv.ParseInt(strings.TrimSpace(req.FormValue("question_id")), 10, 64)
 
@@ -325,6 +327,7 @@ func SkipQuestion(r *scale.Request) scale.Response {
 	if interviewID == 0 {
 		panic(scale.BadRequestError("interview_id is required"))
 	}
+	EnforceInterviewScope(r, interviewID)
 
 	interviewRepo := scale.WR[model.Interview](r)
 	responseRepo := scale.WR[model.Response](r)
@@ -399,6 +402,7 @@ func HintQuestion(r *scale.Request) scale.Response {
 	if interviewID == 0 {
 		panic(scale.BadRequestError("interview_id is required"))
 	}
+	EnforceInterviewScope(r, interviewID)
 
 	interviewRepo := scale.WR[model.Interview](r)
 	responseRepo := scale.WR[model.Response](r)
@@ -454,6 +458,7 @@ func finalizeInterviewTurn(interviewRepo *scale.DAO[model.Interview], interview 
 		}, "Status", "Score")
 		interview.Status = updated.Status
 		interview.Score = updated.Score
+		FireInterviewCompleted(int64(interview.ID))
 	}
 
 	payload := map[string]any{

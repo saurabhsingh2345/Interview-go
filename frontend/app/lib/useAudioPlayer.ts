@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 
 const TTS_URL = `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8113/api/v1"}/tts`;
+const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "";
 
 interface PlayAudioOptions {
   onEnded?: () => void;
@@ -33,7 +34,10 @@ export function useAudioPlayer() {
       try {
         const res = await fetch(TTS_URL, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}),
+          },
           body: JSON.stringify({ text }),
         });
 

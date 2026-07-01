@@ -92,6 +92,7 @@ func SubmitCode(r *scale.Request) scale.Response {
 			Status: "completed",
 			Score:  computeFinalScore(derefResponses(allResponses)),
 		}, "Status", "Score")
+		FireInterviewCompleted(interviewID)
 	}
 
 	return scale.JsonResponse(map[string]any{

@@ -33,6 +33,9 @@ func main() {
 
 	fmt.Println("Running GORM AutoMigrate...")
 	if err := db.AutoMigrate(
+		&model.Partner{},
+		&model.APIKey{},
+		&model.InterviewSession{},
 		&model.Interview{},
 		&model.Response{},
 		&model.Evaluation{},

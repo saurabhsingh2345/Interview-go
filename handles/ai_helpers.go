@@ -218,15 +218,20 @@ func groqModel() string {
 	return modelID
 }
 
-func callGroqJSON(messages []groqMessage, target any) error {
+func callGroqJSON(messages []groqMessage, target any, maxTokens ...int) error {
 	apiKey, baseURL := mustGroqConfig()
+
+	tokens := 800
+	if len(maxTokens) > 0 && maxTokens[0] > 0 {
+		tokens = maxTokens[0]
+	}
 
 	payload := groqRequest{
 		Model:          groqModel(),
 		Messages:       messages,
 		ResponseFormat: map[string]string{"type": "json_object"},
 		Temperature:    0.7,
-		MaxTokens:      800,
+		MaxTokens:      tokens,
 	}
 
 	body, err := json.Marshal(payload)

@@ -4,15 +4,18 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createInterview, Interview, listInterviews } from "./lib/api";
 import { showToast } from "./components/Toast";
-import { Badge, Button, Card, EmptyState, Input, PageHeader, SubtleCard, cn } from "./components/ui";
+import { InterviewerAvatar } from "./components/InterviewerAvatar";
+import { Layers, Activity, CheckCircle2, Sparkles, ArrowRight, ArrowUpRight } from "lucide-react";
 
-function SearchSpark() {
-  return (
-    <svg viewBox="0 0 20 20" className="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <path d="M10 2v4M10 14v4M18 10h-4M6 10H2M15.66 4.34l-2.83 2.83M7.17 12.83l-2.83 2.83M15.66 15.66l-2.83-2.83M7.17 7.17 4.34 4.34" />
-    </svg>
-  );
-}
+const SUGGESTIONS = [
+  "System design",
+  "Go concurrency",
+  "React architecture",
+  "Data structures",
+  "Behavioral / leadership",
+];
+
+const STAT_ICONS = [Layers, Activity, CheckCircle2, Sparkles];
 
 export default function HomePage() {
   const router = useRouter();
@@ -23,37 +26,28 @@ export default function HomePage() {
 
   useEffect(() => {
     listInterviews()
-      .then((data) => {
-        setInterviews(Array.isArray(data) ? data : []);
-      })
-      .catch((err: unknown) => {
-        showToast(
-          err instanceof Error ? err.message : "Failed to load interviews",
-          "error",
-        );
-      })
-      .finally(() => {
-        setLoadingInterviews(false);
-      });
+      .then((data) => setInterviews(Array.isArray(data) ? data : []))
+      .catch((err: unknown) =>
+        showToast(err instanceof Error ? err.message : "Failed to load interviews", "error"),
+      )
+      .finally(() => setLoadingInterviews(false));
   }, []);
 
-  const dashboardStats = useMemo(() => {
-    const completed = interviews.filter((item) => item.status === "completed");
-    const inProgress = interviews.filter((item) => item.status === "in_progress");
-    const averageScore =
-      completed.length > 0
-        ? completed.reduce((sum, item) => sum + (item.score ?? 0), 0) / completed.length
-        : 0;
-
+  const stats = useMemo(() => {
+    const completed = interviews.filter((i) => i.status === "completed");
+    const inProgress = interviews.filter((i) => i.status === "in_progress");
+    const avg = completed.length
+      ? completed.reduce((s, i) => s + (i.score ?? 0), 0) / completed.length
+      : 0;
     return [
-      { label: "Total interviews", value: `${interviews.length}`, meta: "All created sessions" },
-      { label: "In progress", value: `${inProgress.length}`, meta: "Awaiting completion" },
-      { label: "Completed", value: `${completed.length}`, meta: "Ready for review" },
-      { label: "Average score", value: completed.length ? averageScore.toFixed(1) : "--", meta: "Across completed interviews" },
+      { label: "Total interviews", value: `${interviews.length}`, meta: "All sessions" },
+      { label: "In progress", value: `${inProgress.length}`, meta: "Active now" },
+      { label: "Completed", value: `${completed.length}`, meta: "Reviewed" },
+      { label: "Average score", value: completed.length ? avg.toFixed(1) : "—", meta: "out of 10" },
     ];
   }, [interviews]);
 
-  const recentInterviews = interviews.slice(0, 4);
+  const recent = interviews.slice(0, 5);
 
   const handleStart = async () => {
     const trimmed = topic.trim();
@@ -61,163 +55,168 @@ export default function HomePage() {
       showToast("Please enter an interview topic", "error");
       return;
     }
-
     setLoading(true);
     try {
       const data = await createInterview(trimmed);
-      showToast("Interview created successfully", "success");
+      showToast("Interview created", "success");
       router.push(`/interview/${data.id}`);
     } catch (err) {
-      showToast(
-        err instanceof Error ? err.message : "Failed to create interview",
-        "error",
-      );
+      showToast(err instanceof Error ? err.message : "Failed to create interview", "error");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="section-grid">
-      <PageHeader
-        eyebrow="Dashboard"
-        title="Run high-signal interview sessions"
-        description="Create focused interview tracks, monitor active sessions, and review candidate performance in one workspace."
-        action={<Button variant="secondary" onClick={() => router.push("/interviews")}>View all interviews</Button>}
-      />
+    <div className="section-grid stagger">
+      {/* hero */}
+      <section className="surface surface-glow relative overflow-hidden p-7 sm:p-10">
+        <div
+          className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full"
+          style={{ background: "radial-gradient(circle, var(--accent-glow), transparent 70%)" }}
+        />
+        <div className="grid items-center gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
+          <div className="relative">
+            <span className="pill pill-primary"><Sparkles className="h-3.5 w-3.5" /> New session</span>
+            <h1 className="display mt-5 text-4xl sm:text-5xl" style={{ color: "var(--foreground)" }}>
+              Your interview,
+              <br />
+              <span style={{ color: "var(--accent-amber)" }}>conducted by Enfeca.</span>
+            </h1>
+            <p className="mt-4 max-w-xl text-[0.97rem] leading-7" style={{ color: "var(--foreground-muted)" }}>
+              Name a topic and Enfeca runs a structured, adaptive interview — asking, listening,
+              following up, and scoring every answer in real time.
+            </p>
 
-      <section className="stats-grid">
-        {dashboardStats.map((item) => (
-          <Card key={item.label} className="kpi-card">
-            <p className="text-sm font-medium text-slate-500">{item.label}</p>
-            <div className="mt-3 flex items-end justify-between gap-3">
-              <div className="kpi-value">{item.value}</div>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                {item.meta}
-              </span>
+            <div className="mt-7 max-w-xl">
+              <label htmlFor="topic" className="label">Interview topic</label>
+              <div className="input-shell">
+                <Sparkles className="h-[18px] w-[18px]" style={{ color: "var(--accent-amber)" }} />
+                <input
+                  id="topic"
+                  className="input"
+                  value={topic}
+                  onChange={(e) => setTopic(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleStart()}
+                  placeholder="e.g. distributed systems, React performance…"
+                />
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {SUGGESTIONS.map((s) => (
+                  <button
+                    key={s}
+                    className="pill pill-neutral transition hover:-translate-y-0.5"
+                    onClick={() => setTopic(s)}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-6 flex flex-wrap items-center gap-3">
+                <button className="btn btn-primary min-w-[190px]" onClick={handleStart} disabled={loading || !topic.trim()}>
+                  {loading ? <><span className="spinner" /> Creating…</> : <>Begin interview <ArrowRight className="h-4 w-4" /></>}
+                </button>
+                <button className="btn btn-ghost" onClick={() => router.push("/interviews")}>
+                  Browse library
+                </button>
+              </div>
             </div>
-          </Card>
-        ))}
+          </div>
+
+          <div className="hidden lg:block">
+            <InterviewerAvatar state="idle" size={280} />
+          </div>
+        </div>
       </section>
 
-      <section className="dashboard-grid">
-        <Card className="p-6 sm:p-8">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <Badge tone="primary">Create interview</Badge>
-              <h2 className="mt-4 brand-wordmark text-2xl text-slate-950">
-                Launch a new interview flow
-              </h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                Start with a topic and the platform will generate a guided question flow, capture answers, and evaluate each response automatically.
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
-            <div>
-              <label htmlFor="topic-input" className="label">
-                Interview topic
-              </label>
-              <Input
-                id="topic-input"
-                value={topic}
-                onChange={(event) => setTopic(event.target.value)}
-                placeholder="e.g. React architecture, system design, Go concurrency"
-                icon={<SearchSpark />}
-              />
-              <p className="mt-3 text-sm text-slate-500">
-                Keep topics specific so follow-up questions stay sharp and relevant.
-              </p>
-
-              <div className="mt-6 flex flex-wrap gap-3">
-                <Button
-                  className="min-w-[180px]"
-                  onClick={handleStart}
-                  disabled={loading || !topic.trim()}
+      {/* KPIs */}
+      <section className="stats-grid">
+        {stats.map((item, idx) => {
+          const Icon = STAT_ICONS[idx];
+          return (
+            <div key={item.label} className="surface kpi-card">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium" style={{ color: "var(--foreground-muted)" }}>{item.label}</p>
+                <span
+                  className="flex h-9 w-9 items-center justify-center rounded-xl"
+                  style={{ background: "var(--accent-amber-soft)", color: "var(--accent-amber-strong)" }}
                 >
-                  {loading ? (
-                    <>
-                      <span className="spinner" />
-                      Creating interview
-                    </>
-                  ) : (
-                    "Start interview"
-                  )}
-                </Button>
-                <Button variant="ghost" onClick={() => router.push("/interviews")}>
-                  Review previous sessions
-                </Button>
+                  <Icon className="h-[18px] w-[18px]" />
+                </span>
+              </div>
+              <div className="mt-4 flex items-end justify-between gap-3">
+                <div className="kpi-value">{loadingInterviews ? "—" : item.value}</div>
+                <span className="pill pill-neutral">{item.meta}</span>
               </div>
             </div>
+          );
+        })}
+      </section>
 
-            <SubtleCard className="p-5">
-              <p className="text-sm font-semibold text-slate-900">Session design tips</p>
-              <div className="mt-4 space-y-4 text-sm leading-6 text-slate-600">
-                <p>Use topic names that reflect the exact competency you want to evaluate.</p>
-                <p>Completed sessions unlock granular answer-level scoring and feedback.</p>
-                <p>Follow-up prompts are most useful when the first answer has enough detail to evaluate.</p>
-              </div>
-            </SubtleCard>
+      {/* recent */}
+      <section className="surface p-6 sm:p-7">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="brand-wordmark text-xl" style={{ color: "var(--foreground)" }}>Recent sessions</h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--foreground-subtle)" }}>Jump back into active or completed interviews.</p>
           </div>
-        </Card>
+          <button className="btn btn-ghost" onClick={() => router.push("/interviews")}>
+            View all <ArrowUpRight className="h-4 w-4" />
+          </button>
+        </div>
 
-        <div className="space-y-6">
-          <Card className="p-6">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-slate-900">Recent interviews</p>
-                <p className="mt-1 text-sm text-slate-500">Fast access to active and completed sessions.</p>
+        <div className="mt-6 grid gap-3">
+          {loadingInterviews ? (
+            Array.from({ length: 3 }).map((_, i) => <div key={i} className="skeleton h-[72px] rounded-2xl" />)
+          ) : recent.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 py-12 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl" style={{ background: "var(--accent-amber-soft)", color: "var(--accent-amber-strong)" }}>
+                <Sparkles className="h-6 w-6" />
               </div>
-              <Button variant="ghost" onClick={() => router.push("/interviews")}>
-                Open library
-              </Button>
+              <p className="text-sm" style={{ color: "var(--foreground-subtle)" }}>No interviews yet — start one above.</p>
             </div>
-
-            <div className="mt-5 space-y-3">
-              {loadingInterviews ? (
-                Array.from({ length: 3 }).map((_, index) => (
-                  <div key={index} className="skeleton h-20 rounded-2xl" />
-                ))
-              ) : recentInterviews.length === 0 ? (
-                <EmptyState
-                  title="No interviews yet"
-                  description="Create your first interview to populate the workspace and start tracking results."
-                />
-              ) : (
-                recentInterviews.map((item) => {
-                  const isCompleted = item.status === "completed";
-                  const tone = isCompleted ? "success" : item.status === "in_progress" ? "warning" : "neutral";
-
-                  return (
-                    <button
-                      key={item.id}
-                      className={cn(
-                        "w-full rounded-2xl border border-slate-200 bg-card p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md",
-                      )}
-                      onClick={() =>
-                        router.push(isCompleted ? `/results/${item.id}` : `/interview/${item.id}`)
-                      }
+          ) : (
+            recent.map((item) => {
+              const done = item.status === "completed";
+              return (
+                <button
+                  key={item.id}
+                  className="group surface-subtle flex items-center justify-between gap-4 p-4 text-left transition hover:-translate-y-0.5"
+                  style={{ borderRadius: 18 }}
+                  onClick={() => router.push(done ? `/results/${item.id}` : `/interview/${item.id}`)}
+                >
+                  <div className="flex items-center gap-4">
+                    <span
+                      className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl font-semibold"
+                      style={{
+                        background: done ? "rgba(95,208,163,0.12)" : "var(--accent-teal-soft)",
+                        color: done ? "var(--success)" : "var(--accent-teal)",
+                      }}
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-semibold text-slate-900">{item.topic}</p>
-                          <p className="mt-1 text-sm text-slate-500">Interview #{item.id}</p>
-                        </div>
-                        <Badge tone={tone}>{isCompleted ? "Completed" : "In progress"}</Badge>
-                      </div>
-                      <div className="mt-4 flex items-center justify-between text-sm text-slate-500">
-                        <span>{isCompleted ? "Review performance breakdown" : "Continue active interview"}</span>
-                        <span className="font-semibold text-slate-900">
-                          {isCompleted && item.score ? `${item.score.toFixed(0)}/10` : "Open"}
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </Card>
+                      {done ? <CheckCircle2 className="h-5 w-5" /> : <Activity className="h-5 w-5" />}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold" style={{ color: "var(--foreground)" }}>{item.topic}</p>
+                      <p className="mt-0.5 text-xs" style={{ color: "var(--foreground-subtle)" }}>
+                        Session #{item.id} · {done ? "Performance ready" : "In progress"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    {done && item.score ? (
+                      <span className="brand-wordmark text-lg" style={{ color: "var(--accent-amber)" }}>
+                        {item.score.toFixed(0)}<span className="text-xs" style={{ color: "var(--foreground-subtle)" }}>/10</span>
+                      </span>
+                    ) : (
+                      <span className="pill pill-live">Live</span>
+                    )}
+                    <ArrowUpRight className="h-4 w-4 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5" style={{ color: "var(--foreground-subtle)" }} />
+                  </div>
+                </button>
+              );
+            })
+          )}
         </div>
       </section>
     </div>

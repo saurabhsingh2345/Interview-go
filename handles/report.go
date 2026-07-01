@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/eskeon/scale/scale"
+	"github.com/eskeon/scale/scale/logger"
 )
 
 // ─── API handlers ─────────────────────────────────────────────────────────────
@@ -17,23 +18,24 @@ import (
 func GetInterviewReport(r *scale.Request) scale.Response {
 	id := r.Param("id").Int64()
 
+	interviewRepo := scale.WR[model.Interview](r)
+	interview := interviewRepo.Objects().Where("id = ?", id).FirstOrNil()
+	if interview == nil {
+		panic(scale.NotFoundError("interview not found"))
+	}
+	AssertInterviewAccess(r, interview)
+
 	reportRepo := scale.WR[model.InterviewReport](r)
 	existing := reportRepo.Objects().Where("interview_id = ?", id).FirstOrNil()
 	if existing != nil {
 		return scale.JsonResponse(existing)
 	}
 
-	interviewRepo := scale.WR[model.Interview](r)
-	responseRepo := scale.WR[model.Response](r)
-
-	interview := interviewRepo.Objects().Where("id = ?", id).First()
-	if interview.ID == 0 {
-		panic(scale.NotFoundError("interview not found"))
-	}
 	if interview.Status != "completed" {
 		panic(scale.BadRequestError("interview not completed yet"))
 	}
 
+	responseRepo := scale.WR[model.Response](r)
 	responses := responseRepo.Objects().
 		Where("interview_id = ?", id).
 		Preload("Evaluation").
@@ -49,6 +51,13 @@ func GetInterviewReport(r *scale.Request) scale.Response {
 // GetInterviewTranscript returns the full ordered transcript for an interview.
 func GetInterviewTranscript(r *scale.Request) scale.Response {
 	id := r.Param("id").Int64()
+
+	interviewRepo := scale.WR[model.Interview](r)
+	interview := interviewRepo.Objects().Where("id = ?", id).FirstOrNil()
+	if interview == nil {
+		panic(scale.NotFoundError("interview not found"))
+	}
+	AssertInterviewAccess(r, interview)
 
 	responseRepo := scale.WR[model.Response](r)
 	responses := responseRepo.Objects().
@@ -246,10 +255,32 @@ type reportNarrative struct {
 	ImprovementPlan string
 }
 
+// The LLM is inconsistent about shapes: strengths/weaknesses may come back as a
+// string array or a single string, and improvement_plan as a string or a
+// week-by-week object. Capture raw JSON and normalize so parsing never fails.
 type narrativeJSON struct {
-	Strengths       []string `json:"strengths"`
-	Weaknesses      []string `json:"weaknesses"`
-	ImprovementPlan string   `json:"improvement_plan"`
+	Strengths       json.RawMessage `json:"strengths"`
+	Weaknesses      json.RawMessage `json:"weaknesses"`
+	ImprovementPlan json.RawMessage `json:"improvement_plan"`
+}
+
+// normalizeNarrativeField returns a plain string when the model emitted a JSON
+// string, otherwise the structured JSON (object/array) as-is. `fallback` is used
+// when the field is empty/null.
+func normalizeNarrativeField(raw json.RawMessage, fallback string) string {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return fallback
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return fallback
+		}
+		return s
+	}
+	return trimmed
 }
 
 func generateReportNarrative(interview *model.Interview, report *model.InterviewReport, responses []*model.Response) reportNarrative {
@@ -285,13 +316,16 @@ func generateReportNarrative(interview *model.Interview, report *model.Interview
 	)
 
 	var raw narrativeJSON
+	// The narrative (strengths + weaknesses + 4-week plan) is large; the default
+	// 800-token budget truncates the JSON and breaks parsing, so give it room.
 	err := callGroqJSON([]groqMessage{
 		{Role: "system", Content: "You are a senior hiring manager writing an interview debrief report. Be honest, specific, and actionable. Do not be vague. Respond only as JSON."},
 		{Role: "user", Content: userPrompt},
-	}, &raw)
+	}, &raw, 2500)
 
 	if err != nil {
-		// Graceful fallback
+		// Graceful fallback — log so the failure is diagnosable instead of silent.
+		logger.Errorf("report narrative generation failed for interview %d: %v", interview.ID, err)
 		return reportNarrative{
 			Strengths:       "[]",
 			Weaknesses:      "[]",
@@ -299,12 +333,9 @@ func generateReportNarrative(interview *model.Interview, report *model.Interview
 		}
 	}
 
-	strengthsJSON, _ := json.Marshal(raw.Strengths)
-	weaknessesJSON, _ := json.Marshal(raw.Weaknesses)
-
 	return reportNarrative{
-		Strengths:       string(strengthsJSON),
-		Weaknesses:      string(weaknessesJSON),
-		ImprovementPlan: strings.TrimSpace(raw.ImprovementPlan),
+		Strengths:       normalizeNarrativeField(raw.Strengths, "[]"),
+		Weaknesses:      normalizeNarrativeField(raw.Weaknesses, "[]"),
+		ImprovementPlan: normalizeNarrativeField(raw.ImprovementPlan, "Report narrative unavailable."),
 	}
 }

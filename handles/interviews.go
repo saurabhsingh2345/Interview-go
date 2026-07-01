@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go-app/model"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/eskeon/scale/scale"
@@ -11,10 +12,15 @@ import (
 )
 
 type body struct {
-	Topic      string `json:"topic"`
-	ProgramID  *int64 `json:"program_id"`
-	SessionID  *int64 `json:"session_id"`
-	PracticeID *int64 `json:"practice_id"`
+	Topic          string `json:"topic"`
+	CandidateName  string `json:"candidate_name"`
+	CandidateEmail string `json:"candidate_email"`
+	ExternalID     string `json:"external_id"`
+	RedirectURL    string `json:"redirect_url"`
+	CallbackURL    string `json:"callback_url"`
+	ProgramID      *int64 `json:"program_id"`
+	SessionID      *int64 `json:"session_id"`
+	PracticeID     *int64 `json:"practice_id"`
 }
 
 type transcriptBody struct {
@@ -26,45 +32,93 @@ func CreateInterview(r *scale.Request) scale.Response {
 	if strings.TrimSpace(parsedBody.Topic) == "" {
 		panic(scale.BadRequestError("topic is required"))
 	}
+	callbackURL := strings.TrimSpace(parsedBody.CallbackURL)
+	if callbackURL != "" && !isHTTPURL(callbackURL) {
+		panic(scale.BadRequestError("callback_url must be an http(s) URL"))
+	}
+	redirectURL := strings.TrimSpace(parsedBody.RedirectURL)
+	if redirectURL != "" && !isHTTPURL(redirectURL) {
+		panic(scale.BadRequestError("redirect_url must be an http(s) URL"))
+	}
 	repo := scale.WR[model.Interview](r)
+	partnerID := CurrentPartnerID(r)
 
 	// If practice_id is set, return existing interview instead of creating a duplicate.
 	if parsedBody.PracticeID != nil {
-		existing := repo.Objects().Where("practice_id = ?", *parsedBody.PracticeID).FirstOrNil()
+		dq := repo.Objects().Where("practice_id = ?", *parsedBody.PracticeID)
+		if partnerID > 0 {
+			dq = dq.Where("partner_id = ?", partnerID)
+		}
+		existing := dq.FirstOrNil()
 		if existing != nil {
-			return scale.JsonResponse(map[string]any{
-				"id":          existing.ID,
-				"topic":       existing.Topic,
-				"status":      existing.Status,
-				"program_id":  existing.ProgramID,
-				"session_id":  existing.SessionID,
-				"practice_id": existing.PracticeID,
-			})
+			return scale.JsonResponse(createPayload(existing, partnerID, true))
 		}
 	}
 
-	created := repo.Create(&model.Interview{
-		Topic:      parsedBody.Topic,
-		ProgramID:  parsedBody.ProgramID,
-		SessionID:  parsedBody.SessionID,
-		PracticeID: parsedBody.PracticeID,
-	})
+	newInterview := &model.Interview{
+		Topic:          parsedBody.Topic,
+		CandidateName:  strings.TrimSpace(parsedBody.CandidateName),
+		CandidateEmail: strings.TrimSpace(parsedBody.CandidateEmail),
+		ExternalID:     strings.TrimSpace(parsedBody.ExternalID),
+		RedirectURL:    redirectURL,
+		CallbackURL:    callbackURL,
+		ProgramID:      parsedBody.ProgramID,
+		SessionID:      parsedBody.SessionID,
+		PracticeID:     parsedBody.PracticeID,
+	}
+	if partnerID > 0 {
+		newInterview.PartnerID = &partnerID
+	}
+	created := repo.Create(newInterview)
 
-	logger.Infof("Interview created: id=%d topic=%s practice_id=%v", created.ID, created.Topic, created.PracticeID)
+	logger.Infof("Interview created: id=%d topic=%s external_id=%s", created.ID, created.Topic, created.ExternalID)
 
-	return scale.JsonResponse(map[string]any{
-		"id":          created.ID,
-		"topic":       created.Topic,
-		"status":      created.Status,
-		"program_id":  created.ProgramID,
-		"session_id":  created.SessionID,
-		"practice_id": created.PracticeID,
-	})
+	return scale.JsonResponseCreated(createPayload(created, partnerID, false))
+}
+
+// isHTTPURL reports whether s is an absolute http(s) URL.
+func isHTTPURL(s string) bool {
+	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+}
+
+// createPayload is the response body for create/reuse: the interview summary plus
+// the redirect_url the partner sends the candidate's browser to.
+func createPayload(i *model.Interview, partnerID int64, reused bool) map[string]any {
+	out := map[string]any{
+		"id":           i.ID,
+		"topic":        i.Topic,
+		"status":       i.Status,
+		"external_id":  i.ExternalID,
+		"program_id":   i.ProgramID,
+		"session_id":   i.SessionID,
+		"practice_id":  i.PracticeID,
+		"redirect_url": BuildRedirectURL(i, partnerID),
+	}
+	if reused {
+		out["reused"] = true
+	}
+	return out
+}
+
+// interviewURL builds the candidate-facing interview page URL from the
+// INTERVIEW_APP_URL env (no trailing slash). Returns "" when unset so callers
+// can fall back to constructing their own link.
+func interviewURL(id int64) string {
+	base := strings.TrimRight(os.Getenv("INTERVIEW_APP_URL"), "/")
+	if base == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s/interview/%d", base, id)
 }
 
 func ListInterviews(r *scale.Request) scale.Response {
 	pr := scale.WR[model.Interview](r)
 	q := pr.Objects().Descending("created_at")
+
+	// Tenancy: a partner only sees its own interviews.
+	if partnerID := CurrentPartnerID(r); partnerID > 0 {
+		q = q.Where("partner_id = ?", partnerID)
+	}
 
 	if pid := r.Query("practice_id").Int(); pid > 0 {
 		q = q.Where("practice_id = ?", pid)
@@ -96,6 +150,12 @@ func GetInterviewByID(r *scale.Request) scale.Response {
 	interview := pr.Objects().Where("id = ?", id).FirstOrNil()
 	if interview == nil {
 		panic(scale.NotFoundError("interview not found"))
+	}
+	// Tenancy: a partner may only read its own interviews.
+	if partnerID := CurrentPartnerID(r); partnerID > 0 {
+		if interview.PartnerID == nil || *interview.PartnerID != partnerID {
+			panic(scale.NotFoundError("interview not found"))
+		}
 	}
 	return scale.JsonResponse(map[string]any{
 		"id":            interview.ID,
@@ -131,6 +191,8 @@ func CompleteInterview(r *scale.Request) scale.Response {
 
 	interview.Status = updated.Status
 	interview.Score = updated.Score
+
+	FireInterviewCompleted(interview.ID)
 
 	return scale.JsonResponse(map[string]any{
 		"id":        interview.ID,

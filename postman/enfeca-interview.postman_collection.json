@@ -1,0 +1,103 @@
+{
+  "info": {
+    "name": "Enfeca Interview API — Partner redirect integration",
+    "description": "Third-party integration: POST create -> redirect user -> GET report.\n\nAuth: Bearer partner API key (set the `apiKey` collection variable). Set `baseUrl` to the interview API host.\n\nFlow:\n1. Create Interview (partner API key) -> response has `redirect_url`.\n2. Send the user's browser to `redirect_url`. They take the interview with no login; the candidate app calls Session Exchange for you.\n3. Poll Get Interview until status = completed (or receive the completion webhook), then Get Report.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{apiKey}}", "type": "string" }]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8113", "type": "string" },
+    { "key": "apiKey", "value": "sk_live_replace_me", "type": "string" },
+    { "key": "interviewId", "value": "", "type": "string" },
+    { "key": "redirectUrl", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "1. Create Interview",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json && json.id) { pm.collectionVariables.set('interviewId', json.id); }",
+              "if (json && json.redirect_url) { pm.collectionVariables.set('redirectUrl', json.redirect_url); }",
+              "pm.test('created', () => pm.response.code === 200 || pm.response.code === 201);",
+              "pm.test('has redirect_url', () => !!json.redirect_url);",
+              "console.log('Open in a browser:', json.redirect_url);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": { "raw": "{{baseUrl}}/api/v1/interviews", "host": ["{{baseUrl}}"], "path": ["api", "v1", "interviews"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"topic\": \"Senior Go Engineer — concurrency & systems\",\n  \"candidate_name\": \"Asha Rao\",\n  \"candidate_email\": \"asha@acme.com\",\n  \"external_id\": \"acme-user-9981\",\n  \"redirect_url\": \"https://acme.com/interviews/done\",\n  \"callback_url\": \"https://acme.com/hooks/interview\"\n}"
+        },
+        "description": "Create an interview. Returns { id, topic, status, external_id, redirect_url }. Send the user's browser to redirect_url."
+      }
+    },
+    {
+      "name": "2. (reference) Session Exchange",
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": { "raw": "{{baseUrl}}/api/v1/session/exchange", "host": ["{{baseUrl}}"], "path": ["api", "v1", "session", "exchange"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"token\": \"paste-the-t-query-param-from-redirect_url\"\n}"
+        },
+        "description": "The candidate app does this automatically on landing. Shown here so you can see the login-bypass. Returns a session_token scoped to the interview."
+      }
+    },
+    {
+      "name": "3a. Get Interview (poll status)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/v1/interviews/{{interviewId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "interviews", "{{interviewId}}"] }
+      }
+    },
+    {
+      "name": "3b. Get Report",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/v1/interviews/{{interviewId}}/report", "host": ["{{baseUrl}}"], "path": ["api", "v1", "interviews", "{{interviewId}}", "report"] },
+        "description": "Returns 400 'interview not completed yet' until the interview is done."
+      }
+    },
+    {
+      "name": "Get Transcript",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/v1/interviews/{{interviewId}}/transcript", "host": ["{{baseUrl}}"], "path": ["api", "v1", "interviews", "{{interviewId}}", "transcript"] }
+      }
+    },
+    {
+      "name": "Get Evaluation",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/v1/interviews/{{interviewId}}/evaluation", "host": ["{{baseUrl}}"], "path": ["api", "v1", "interviews", "{{interviewId}}", "evaluation"] }
+      }
+    },
+    {
+      "name": "List Interviews",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/v1/interviews", "host": ["{{baseUrl}}"], "path": ["api", "v1", "interviews"] }
+      }
+    }
+  ]
+}

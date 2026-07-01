@@ -1,4 +1,38 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8113/api/v1";
+const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "";
+
+// Session token minted by exchanging the redirect launch token (?t=). When set,
+// it is the browser's credential and takes precedence over any build-time API key
+// — so the partner's API key never has to ship in the bundle. Persisted per tab
+// so a page refresh mid-interview keeps working.
+const SESSION_STORAGE_KEY = "enfeca_session_token";
+let sessionToken = "";
+
+function loadStoredSessionToken(): string {
+  if (sessionToken) return sessionToken;
+  if (typeof window !== "undefined") {
+    sessionToken = window.sessionStorage.getItem(SESSION_STORAGE_KEY) || "";
+  }
+  return sessionToken;
+}
+
+export function setSessionToken(token: string) {
+  sessionToken = token;
+  if (typeof window !== "undefined") {
+    window.sessionStorage.setItem(SESSION_STORAGE_KEY, token);
+  }
+}
+
+export function clearSessionToken() {
+  sessionToken = "";
+  if (typeof window !== "undefined") {
+    window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+  }
+}
+
+function bearerToken(): string {
+  return loadStoredSessionToken() || API_KEY;
+}
 
 class ApiError extends Error {
   status: number;
@@ -15,14 +49,19 @@ async function request<T>(
 ): Promise<T> {
   const url = `${API_BASE}${endpoint}`;
   const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
+  const token = bearerToken();
+  const authHeader: Record<string, string> = token
+    ? { Authorization: `Bearer ${token}` }
+    : {};
   const config: RequestInit = {
+    ...options,
     headers: isFormData
-      ? options.headers
+      ? { ...authHeader, ...(options.headers as Record<string, string>) }
       : {
           "Content-Type": "application/json",
-          ...options.headers,
+          ...authHeader,
+          ...(options.headers as Record<string, string>),
         },
-    ...options,
   };
 
   const res = await fetch(url, config);
@@ -39,6 +78,35 @@ async function request<T>(
   }
 
   return res.json();
+}
+
+// ── Session handoff (redirect login-bypass) ──
+
+export interface ExchangeSessionResponse {
+  session_token: string;
+  expires_at: number;
+  interview: {
+    id: number;
+    topic: string;
+    status: string;
+    current_phase: string;
+    score: number;
+    redirect_url: string;
+  };
+  candidate: { name: string; email: string };
+}
+
+// exchangeSession trades the one-time launch token (?t=) for a session token,
+// stores it, and returns the interview + candidate context. Unauthenticated call.
+export async function exchangeSession(
+  launchToken: string
+): Promise<ExchangeSessionResponse> {
+  const data = await request<ExchangeSessionResponse>("/session/exchange", {
+    method: "POST",
+    body: JSON.stringify({ token: launchToken }),
+  });
+  setSessionToken(data.session_token);
+  return data;
 }
 
 // ── Interview Endpoints ──
