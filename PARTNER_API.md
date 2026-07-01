@@ -181,6 +181,9 @@ Environment on the interview service:
 | `INTERVIEW_HANDOFF_SECRET` | Secret that encrypts/decrypts launch tokens. **Required** for the redirect flow. |
 | `WEBHOOK_SECRET` | HMAC key for the completion webhook. |
 | `REQUIRE_API_KEY` | `true` (default) enforces API keys; `false` only for local first-party dev. |
+| `RATE_LIMIT_PARTNER_RPM` | Requests/minute per API key (default `120`). |
+| `RATE_LIMIT_SESSION_RPM` | Requests/minute per browser session token (default `300`). |
+| `RATE_LIMIT_IP_RPM` | Requests/minute per client IP for unauthenticated/failed-auth calls, incl. `session/exchange` (default `30`). |
 
 ---
 
@@ -195,11 +198,24 @@ JSON: `{"status": <code>, "error": "<message>"}`.
 | `401` | Auth failure / expired session. |
 | `404` | Not found or not yours. |
 | `409` | Launch token already used. |
+| `429` | Rate limit exceeded (see `Retry-After` header). |
 | `500` | Server / upstream error. |
 
 ---
 
-## 9. Testing
+## 9. Reliability & audit
+
+- **Rate limiting** — per API key, per session token, and per IP (see the env
+  table above). Exceeding a limit returns `429` with a `Retry-After` header.
+- **Webhook delivery** — the completion webhook is retried up to 3 attempts
+  total (immediate, then 5s, then 30s backoff) on network error or non-2xx
+  response. Every attempt — success or failure — is persisted to the
+  `webhook_logs` table (`interview_id`, `attempt`, `status_code`, `success`,
+  `error`) for audit/debugging.
+
+---
+
+## 10. Testing
 
 `api.http` (repo root) and `postman/` have the three-call flow pre-wired — set
 your `apiKey` and run Create → open the `redirect_url` in a browser → Get Report.

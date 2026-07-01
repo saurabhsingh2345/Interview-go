@@ -41,6 +41,7 @@ func main() {
 		&model.Evaluation{},
 		&model.FollowUpContext{},
 		&model.InterviewReport{},
+		&model.WebhookLog{},
 	); err != nil {
 		fmt.Fprintf(os.Stderr, "auto-migrate failed: %v\n", err)
 		os.Exit(1)
