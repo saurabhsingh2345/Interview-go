@@ -31,7 +31,6 @@ func (s *Service) Bind(app *scale.Application) {
 	app.RegisterModel(&model.Evaluation{})
 	app.RegisterModel(&model.FollowUpContext{})
 	app.RegisterModel(&model.InterviewReport{})
-	app.RegisterModel(&model.WebhookLog{})
 
 	// Third-party API authentication (Bearer API keys).
 	app.RegisterMiddleware(handles.APIKeyAuth)

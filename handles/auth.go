@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -78,18 +77,7 @@ func bearerToken(r *http.Request) string {
 // supplied key is still validated and attaches the partner to the request.
 func APIKeyAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodOptions || r.URL.Path == "/health" {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		// Unauthenticated by design (the launch token IS the credential), but
-		// still IP-rate-limited: it's the one endpoint an attacker could hit
-		// repeatedly while guessing/replaying a token.
-		if r.URL.Path == "/api/v1/session/exchange" {
-			if rateLimited(w, ipLimiter, clientIP(r)) {
-				return
-			}
+		if r.Method == http.MethodOptions || r.URL.Path == "/health" || r.URL.Path == "/api/v1/session/exchange" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -105,9 +93,6 @@ func APIKeyAuth(next http.Handler) http.Handler {
 
 		if raw == "" {
 			if authRequired() {
-				if rateLimited(w, ipLimiter, clientIP(r)) {
-					return
-				}
 				writeAuthJSON(w, http.StatusUnauthorized, "Unauthorized")
 				return
 			}
@@ -119,19 +104,11 @@ func APIKeyAuth(next http.Handler) http.Handler {
 
 		var key model.APIKey
 		if err := db.Where("key_hash = ? AND active = ?", HashAPIKey(raw), true).First(&key).Error; err != nil {
-			// Rate-limit by IP, not the (invalid) key, so a brute-force attempt
-			// can't dodge the limiter by cycling through guessed keys.
-			if rateLimited(w, ipLimiter, clientIP(r)) {
-				return
-			}
 			writeAuthJSON(w, http.StatusUnauthorized, "Invalid API key")
 			return
 		}
 		if key.ExpiresAt != nil && key.ExpiresAt.Before(time.Now()) {
 			writeAuthJSON(w, http.StatusUnauthorized, "API key expired")
-			return
-		}
-		if rateLimited(w, partnerKeyLimiter, strconv.FormatInt(key.ID, 10)) {
 			return
 		}
 
@@ -157,17 +134,11 @@ func authenticateSession(next http.Handler, w http.ResponseWriter, r *http.Reque
 
 	var sess model.InterviewSession
 	if err := db.Where("token_hash = ?", HashAPIKey(raw)).First(&sess).Error; err != nil {
-		if rateLimited(w, ipLimiter, clientIP(r)) {
-			return
-		}
 		writeAuthJSON(w, http.StatusUnauthorized, "Invalid session token")
 		return
 	}
 	if sess.ExpiresAt.Before(time.Now()) {
 		writeAuthJSON(w, http.StatusUnauthorized, "Session expired")
-		return
-	}
-	if rateLimited(w, sessionLimiter, strconv.FormatInt(sess.ID, 10)) {
 		return
 	}
 
